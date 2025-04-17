@@ -1,0 +1,8 @@
+
+# Build files
+dist/
+build/
+*.spec
+*.dmg
+__pycache__/
+*.pyc
