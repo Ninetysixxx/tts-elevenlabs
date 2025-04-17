@@ -247,6 +247,41 @@ class ConversionTab:
         # Kết nối sự kiện khi thay đổi giá trị của combobox
         self.voice_combobox.bind("<<ComboboxSelected>>", self._on_voice_selected)
         
+        # Thêm tùy chọn nhập ID voice
+        custom_voice_frame = ttk.Frame(voice_frame)
+        custom_voice_frame.pack(fill=tk.X, pady=5)
+        
+        self.use_custom_voice_id = tk.BooleanVar(value=False)
+        self.custom_voice_checkbox = ttk.Checkbutton(
+            custom_voice_frame,
+            text="Sử dụng Voice ID tùy chọn",
+            variable=self.use_custom_voice_id,
+            command=self._toggle_custom_voice_id
+        )
+        self.custom_voice_checkbox.pack(anchor=tk.W)
+        
+        self.custom_voice_id_frame = ttk.Frame(voice_frame)
+        self.custom_voice_id_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(self.custom_voice_id_frame, text="Voice ID:").pack(side=tk.LEFT)
+        self.custom_voice_id_var = tk.StringVar()
+        self.custom_voice_id_entry = ttk.Entry(
+            self.custom_voice_id_frame,
+            textvariable=self.custom_voice_id_var
+        )
+        self.custom_voice_id_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+        
+        # Thêm nút nghe thử cho Voice ID tùy chọn
+        self.preview_custom_voice_btn = ttk.Button(
+            self.custom_voice_id_frame,
+            text="Nghe thử",
+            command=self._preview_voice
+        )
+        self.preview_custom_voice_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        
+        # Ẩn frame nhập Voice ID tùy chọn mặc định
+        self.custom_voice_id_frame.pack_forget()
+        
         # Model selection
         model_frame = ttk.Frame(right_frame)
         model_frame.pack(fill=tk.X, pady=5)
@@ -652,21 +687,31 @@ class ConversionTab:
             return
         
         # Check voice selection
-        voice_name = self.voice_var.get()
-        if not voice_name:
-            messagebox.showerror("Lỗi", "Vui lòng chọn giọng nói.")
-            return
-        
-        # Find voice ID
         voice_id = None
-        for voice in self.voices:
-            if voice["name"] == voice_name:
-                voice_id = voice["voice_id"]
-                break
         
-        if not voice_id:
-            messagebox.showerror("Lỗi", "Không tìm thấy ID giọng nói. Vui lòng làm mới danh sách.")
-            return
+        # Kiểm tra nếu sử dụng voice ID tùy chọn
+        if self.use_custom_voice_id.get():
+            voice_id = self.custom_voice_id_var.get().strip()
+            if not voice_id:
+                messagebox.showerror("Lỗi", "Vui lòng nhập Voice ID tùy chọn.")
+                return
+            self.logger.info(f"Sử dụng Voice ID tùy chọn: {voice_id}")
+        else:
+            # Lấy voice ID từ danh sách có sẵn
+            voice_name = self.voice_var.get()
+            if not voice_name:
+                messagebox.showerror("Lỗi", "Vui lòng chọn giọng nói.")
+                return
+            
+            # Find voice ID
+            for voice in self.voices:
+                if voice["name"] == voice_name:
+                    voice_id = voice["voice_id"]
+                    break
+            
+            if not voice_id:
+                messagebox.showerror("Lỗi", "Không tìm thấy ID giọng nói. Vui lòng làm mới danh sách.")
+                return
         
         # Get text chunks for conversion
         text_chunks = []
@@ -835,86 +880,109 @@ class ConversionTab:
         self.convert_btn.config(state="normal")
     
     def _preview_voice(self):
-        """Handle preview voice"""
+        """Preview selected voice"""
         # Check if we have an API client
         if not self.api_client:
             messagebox.showerror("Lỗi", "Không có API client. Vui lòng chọn một API key.")
             return
         
-        # Check voice selection
-        voice_name = self.voice_var.get()
-        if not voice_name:
-            messagebox.showerror("Lỗi", "Vui lòng chọn giọng nói.")
-            return
-        
-        # Find voice ID
+        # Get voice ID
         voice_id = None
-        for voice in self.voices:
-            if voice["name"] == voice_name:
-                voice_id = voice["voice_id"]
-                break
         
-        if not voice_id:
-            messagebox.showerror("Lỗi", "Không tìm thấy ID giọng nói. Vui lòng làm mới danh sách.")
-            return
+        # Kiểm tra nếu sử dụng voice ID tùy chọn
+        if self.use_custom_voice_id.get():
+            voice_id = self.custom_voice_id_var.get().strip()
+            if not voice_id:
+                messagebox.showerror("Lỗi", "Vui lòng nhập Voice ID tùy chọn.")
+                return
+            self.logger.info(f"Đang nghe thử Voice ID tùy chọn: {voice_id}")
+            # Disable custom preview button
+            self.preview_custom_voice_btn.config(state="disabled", text="Đang tải...")
+        else:
+            # Lấy voice ID từ danh sách có sẵn
+            voice_name = self.voice_var.get()
+            if not voice_name:
+                messagebox.showerror("Lỗi", "Vui lòng chọn giọng nói.")
+                return
+            
+            # Find voice ID
+            for voice in self.voices:
+                if voice["name"] == voice_name:
+                    voice_id = voice["voice_id"]
+                    break
+            
+            if not voice_id:
+                messagebox.showerror("Lỗi", "Không tìm thấy ID giọng nói. Vui lòng làm mới danh sách.")
+                return
+            
+            # Disable standard preview button
+            self.preview_voice_btn.config(state="disabled", text="Đang tải...")
         
         # Start preview in background
-        self.logger.info(f"Đang nghe thử giọng nói: {voice_name}")
-        
         def preview():
             try:
-                # Get audio data
+                # Get sample audio
                 audio_data = self.api_client.get_voice_audio(voice_id)
                 
-                if not audio_data:
-                    self.parent.after(0, lambda: self._preview_error("Không thể lấy được audio từ API"))
-                    return
-                
-                # Play audio
-                self.parent.after(0, lambda: self._play_audio(audio_data))
+                if audio_data:
+                    # Play in main thread
+                    self.parent.after(0, lambda: self._play_audio(audio_data))
+                else:
+                    # Show error in main thread
+                    self.parent.after(0, lambda: self._preview_error("Không thể lấy mẫu giọng nói"))
             except Exception as e:
+                # Show error in main thread
                 self.parent.after(0, lambda: self._preview_error(str(e)))
+            finally:
+                # Reset button state in main thread
+                self.parent.after(0, self._reset_preview_buttons)
         
         # Start preview thread
         threading.Thread(target=preview, daemon=True).start()
     
+    def _reset_preview_buttons(self):
+        """Reset preview buttons to default state"""
+        self.preview_voice_btn.config(state="normal", text="Nghe thử")
+        self.preview_custom_voice_btn.config(state="normal", text="Nghe thử")
+    
     def _play_audio(self, audio_data):
         """Handle playing audio"""
-        import os
-        import tempfile
-        import platform
-        from subprocess import Popen
-        
-        # Tạo file tạm để lưu trữ audio
-        temp_dir = tempfile.gettempdir()
-        temp_file = os.path.join(temp_dir, "voice_preview.mp3")
-        
         try:
-            # Lưu audio data vào file tạm
-            with open(temp_file, "wb") as f:
-                f.write(audio_data)
+            import tempfile
+            import pygame
             
-            # Phát âm thanh dựa trên hệ điều hành
-            system = platform.system()
+            # Create a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+                temp_file.write(audio_data)
+                temp_file_path = temp_file.name
             
-            if system == "Windows":
-                os.startfile(temp_file)
-            elif system == "Darwin":  # macOS
-                self.logger.info(f"Đang phát âm thanh từ file: {temp_file}")
-                Popen(["afplay", temp_file])
-            else:  # Linux
-                Popen(["xdg-open", temp_file])
+            # Initialize pygame mixer
+            pygame.mixer.init()
+            pygame.mixer.music.load(temp_file_path)
+            pygame.mixer.music.play()
             
-            self.logger.info("Đang phát âm thanh mẫu...")
+            # Wait for playback to finish
+            while pygame.mixer.music.get_busy():
+                pygame.time.Clock().tick(10)
             
+            # Cleanup
+            pygame.mixer.quit()
+            
+            # Delete temp file
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
+                
+            self.logger.info("Phát mẫu giọng nói thành công")
         except Exception as e:
-            self.logger.error(f"Lỗi phát âm thanh: {str(e)}")
-            messagebox.showerror("Lỗi Phát Âm Thanh", f"Lỗi: {str(e)}")
+            self.logger.error(f"Lỗi khi phát audio: {str(e)}")
+            messagebox.showerror("Lỗi", f"Không thể phát audio: {str(e)}")
     
     def _preview_error(self, error_message):
         """Handle preview error"""
-        self.logger.error(f"Lỗi nghe thử giọng nói: {error_message}")
-        messagebox.showerror("Lỗi Nghe Thử Giọng Nói", f"Lỗi: {error_message}")
+        self.logger.error(f"Lỗi khi nghe thử: {error_message}")
+        messagebox.showerror("Lỗi", f"Không thể nghe thử giọng: {error_message}")
     
     def _on_voice_selected(self, event):
         """Handle voice selection"""
@@ -922,4 +990,11 @@ class ConversionTab:
         self.logger.info(f"Đã chọn giọng nói: {self.voice_var.get()}")
         
         # Lưu vào cấu hình mặc định
-        self.config.set("default_voice", self.voice_var.get()) 
+        self.config.set("default_voice", self.voice_var.get())
+    
+    def _toggle_custom_voice_id(self):
+        """Toggle custom voice ID"""
+        if self.use_custom_voice_id.get():
+            self.custom_voice_id_frame.pack(fill=tk.X, pady=5)
+        else:
+            self.custom_voice_id_frame.pack_forget() 

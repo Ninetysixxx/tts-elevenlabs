@@ -1,7 +1,7 @@
 {
   "output_format": "mp3",
   "default_model": "eleven_turbo_v2",
-  "default_voice": "Brian",
+  "default_voice": "Jessica",
   "output_directory": "/Users/justin/Downloads/Personal/002-tts-elevenlabs",
   "stability": 0.5,
   "similarity_boost": 0.5,
