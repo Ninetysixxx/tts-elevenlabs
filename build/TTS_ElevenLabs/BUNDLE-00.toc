@@ -1,0 +1,3 @@
+([('TTS_ElevenLabs',
+   '/Users/justin/Downloads/Personal/002-tts-elevenlabs/dist/TTS_ElevenLabs',
+   'EXECUTABLE')],)

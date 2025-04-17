@@ -11,6 +11,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import Dict, List, Any, Optional, Callable
+import datetime
 
 from src.api.elevenlabs_client import ElevenLabsClient
 from src.utils.api_key_manager import ApiKeyManager
@@ -90,9 +91,34 @@ class ConversionTab:
         file_frame = ttk.Frame(left_frame)
         file_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Label(file_frame, text="Tệp Văn Bản Đầu Vào:").pack(anchor=tk.W)
+        # Add radio buttons for input type selection
+        self.input_type_var = tk.StringVar(value="file")
+        input_type_frame = ttk.Frame(file_frame)
+        input_type_frame.pack(fill=tk.X, pady=5)
         
-        input_file_frame = ttk.Frame(file_frame)
+        ttk.Radiobutton(
+            input_type_frame,
+            text="Chọn File",
+            variable=self.input_type_var,
+            value="file",
+            command=self._toggle_input_type
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Radiobutton(
+            input_type_frame,
+            text="Nhập Trực Tiếp",
+            variable=self.input_type_var,
+            value="text",
+            command=self._toggle_input_type
+        ).pack(side=tk.LEFT)
+        
+        # File selection frame
+        self.file_selection_frame = ttk.Frame(file_frame)
+        self.file_selection_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(self.file_selection_frame, text="Tệp Văn Bản Đầu Vào:").pack(anchor=tk.W)
+        
+        input_file_frame = ttk.Frame(self.file_selection_frame)
         input_file_frame.pack(fill=tk.X, pady=5)
         
         self.input_file_var = tk.StringVar()
@@ -108,6 +134,59 @@ class ConversionTab:
             command=self._browse_input_file
         )
         self.browse_input_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        
+        # Word count display for file
+        self.word_count_frame = ttk.Frame(self.file_selection_frame)
+        self.word_count_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(self.word_count_frame, text="Số từ:").pack(side=tk.LEFT)
+        self.word_count_label = ttk.Label(self.word_count_frame, text="0")
+        self.word_count_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        self.count_words_btn = ttk.Button(
+            self.word_count_frame,
+            text="Đếm Từ",
+            command=self._count_words
+        )
+        self.count_words_btn.pack(side=tk.RIGHT)
+        
+        # Text input frame
+        self.text_input_frame = ttk.Frame(file_frame)
+        
+        ttk.Label(self.text_input_frame, text="Nhập Văn Bản:").pack(anchor=tk.W)
+        
+        # Text input with scrollbar
+        text_scroll_frame = ttk.Frame(self.text_input_frame)
+        text_scroll_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        self.input_text_var = tk.Text(
+            text_scroll_frame,
+            height=10,
+            wrap=tk.WORD
+        )
+        self.input_text_var.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        text_scrollbar = ttk.Scrollbar(text_scroll_frame, command=self.input_text_var.yview)
+        text_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.input_text_var.config(yscrollcommand=text_scrollbar.set)
+        
+        # Word count for text input
+        self.text_word_count_frame = ttk.Frame(self.text_input_frame)
+        self.text_word_count_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(self.text_word_count_frame, text="Số từ:").pack(side=tk.LEFT)
+        self.text_word_count_label = ttk.Label(self.text_word_count_frame, text="0")
+        self.text_word_count_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        self.count_text_words_btn = ttk.Button(
+            self.text_word_count_frame,
+            text="Đếm Từ",
+            command=self._count_text_words
+        )
+        self.count_text_words_btn.pack(side=tk.RIGHT)
+        
+        # Show default input type on startup
+        self._toggle_input_type()
         
         # Output directory
         output_frame = ttk.Frame(left_frame)
@@ -398,15 +477,19 @@ class ConversionTab:
         self.logger.info("Đang kiểm tra thông tin credits...")
         
         def get_user_info():
+            # Get individual API key info
             info = self.api_client.get_user_info()
             
+            # Get total credits from all keys
+            total_credits = self.api_key_manager.get_total_credits(self.api_client)
+            
             # Update UI in main thread
-            self.parent.after(0, lambda: self._update_credit_info(info))
+            self.parent.after(0, lambda: self._update_credit_info(info, total_credits))
         
         # Start in background
         threading.Thread(target=get_user_info, daemon=True).start()
     
-    def _update_credit_info(self, info):
+    def _update_credit_info(self, info, total_credits=None):
         """Update credit information in UI"""
         if "error" in info:
             self.logger.error(f"Lỗi lấy thông tin credits: {info['error']}")
@@ -430,7 +513,27 @@ class ConversionTab:
         
         # Update UI với số còn lại / tổng số
         self.credits_label.config(text=f"{character_remaining:,} / {character_limit:,}")
-        self.total_credits_label.config(text=f"Tổng credits khả dụng: {character_remaining:,}")
+        
+        # Update total credits if provided
+        if total_credits:
+            total_remaining = total_credits.get("total_remaining", 0)
+            unique_keys = total_credits.get("unique_keys", 0)
+            duplicates = total_credits.get("duplicates", 0)
+            
+            # Update total credits display
+            if unique_keys > 0:
+                self.total_credits_label.config(
+                    text=f"Tổng credits khả dụng: {total_remaining:,} ({unique_keys} khóa duy nhất)"
+                )
+                
+                # Log detailed information
+                self.logger.info(f"Tổng credits khả dụng: {total_remaining:,} từ {unique_keys} khóa API duy nhất")
+                if duplicates > 0:
+                    self.logger.info(f"Đã phát hiện {duplicates} khóa trùng lặp và đã loại bỏ khỏi tổng số")
+            else:
+                self.total_credits_label.config(text=f"Tổng credits khả dụng: {character_remaining:,}")
+        else:
+            self.total_credits_label.config(text=f"Tổng credits khả dụng: {character_remaining:,}")
         
         self.logger.info(f"Cập nhật thông tin tài khoản thành công")
         self.logger.info(f"Tài khoản còn {character_remaining:,} / {character_limit:,} credits")
@@ -482,6 +585,56 @@ class ConversionTab:
         elif level == "SUCCESS":
             self.log_text.tag_configure(tag, foreground="green")
     
+    def _toggle_input_type(self):
+        """Toggle between file selection and text input"""
+        input_type = self.input_type_var.get()
+        
+        if input_type == "file":
+            # Show file selection, hide text input
+            self.file_selection_frame.pack(fill=tk.X, pady=5)
+            if self.text_input_frame.winfo_manager():
+                self.text_input_frame.pack_forget()
+        else:
+            # Show text input, hide file selection
+            if self.file_selection_frame.winfo_manager():
+                self.file_selection_frame.pack_forget()
+            self.text_input_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+    
+    def _count_words(self):
+        """Count words in the selected file"""
+        input_file = self.input_file_var.get()
+        if not input_file or not os.path.exists(input_file):
+            messagebox.showerror("Lỗi", "Vui lòng chọn tệp văn bản đầu vào hợp lệ.")
+            return
+        
+        try:
+            # Read the file content
+            text = self.text_processor.read_text_file(input_file)
+            
+            # Count words
+            word_count = len(text.split())
+            
+            # Update the word count label
+            self.word_count_label.config(text=f"{word_count:,}")
+            
+            self.logger.info(f"Tệp '{os.path.basename(input_file)}' có {word_count:,} từ.")
+        except Exception as e:
+            self.logger.error(f"Lỗi đếm từ: {str(e)}")
+            messagebox.showerror("Lỗi", f"Không thể đếm từ: {str(e)}")
+    
+    def _count_text_words(self):
+        """Count words in the text input"""
+        # Get text from the text input
+        text = self.input_text_var.get("1.0", tk.END).strip()
+        
+        # Count words
+        word_count = len(text.split())
+        
+        # Update the word count label
+        self.text_word_count_label.config(text=f"{word_count:,}")
+        
+        self.logger.info(f"Văn bản nhập có {word_count:,} từ.")
+    
     def _start_conversion(self):
         """Start the conversion process"""
         # Check if we have an API client
@@ -489,11 +642,8 @@ class ConversionTab:
             messagebox.showerror("Lỗi", "Không có API client. Vui lòng chọn một API key.")
             return
         
-        # Check input file
-        input_file = self.input_file_var.get()
-        if not input_file or not os.path.exists(input_file):
-            messagebox.showerror("Lỗi", "Vui lòng chọn tệp văn bản đầu vào hợp lệ.")
-            return
+        # Get input type
+        input_type = self.input_type_var.get()
         
         # Check output directory
         output_dir = self.output_dir_var.get()
@@ -518,29 +668,72 @@ class ConversionTab:
             messagebox.showerror("Lỗi", "Không tìm thấy ID giọng nói. Vui lòng làm mới danh sách.")
             return
         
-        # Generate output filename
-        input_filename = os.path.basename(input_file)
-        output_filename = os.path.splitext(input_filename)[0] + ".mp3"
-        output_file = os.path.join(output_dir, output_filename)
+        # Get text chunks for conversion
+        text_chunks = []
+        input_file = None  # Only used for file input
+        output_filename = ""
         
-        # Disable the convert button
-        self.convert_btn.config(state="disabled")
-        
-        # Start conversion in background
-        self.logger.info(f"Bắt đầu chuyển đổi: {input_file}")
-        
-        def convert():
+        if input_type == "file":
+            # Check input file
+            input_file = self.input_file_var.get()
+            if not input_file or not os.path.exists(input_file):
+                messagebox.showerror("Lỗi", "Vui lòng chọn tệp văn bản đầu vào hợp lệ.")
+                return
+                
+            # Read text from file
             try:
                 # Process text file
                 self.logger.info("Đang đọc tệp văn bản...")
                 text_chunks = self.text_processor.process_file(input_file)
                 
                 if not text_chunks:
-                    self.parent.after(0, lambda: self._conversion_error("Tệp văn bản trống hoặc không thể đọc."))
+                    messagebox.showerror("Lỗi", "Tệp văn bản trống hoặc không thể đọc.")
                     return
+                    
+                # Generate output filename from input file
+                input_filename = os.path.basename(input_file)
+                output_filename = os.path.splitext(input_filename)[0] + ".mp3"
                 
                 self.logger.info(f"Đã chia tệp thành {len(text_chunks)} phần")
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Không thể đọc tệp: {str(e)}")
+                return
+        else:
+            # Get text from input text box
+            text_content = self.input_text_var.get("1.0", tk.END).strip()
+            
+            if not text_content:
+                messagebox.showerror("Lỗi", "Vui lòng nhập văn bản để chuyển đổi.")
+                return
                 
+            # Process text content
+            processed_text = self.text_processor.preprocess_text(text_content)
+            text_chunks = self.text_processor.split_into_chunks(processed_text)
+            
+            if not text_chunks:
+                messagebox.showerror("Lỗi", "Không thể xử lý văn bản đã nhập.")
+                return
+            
+            # Generate a default output filename
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_filename = f"text_to_speech_{timestamp}.mp3"
+            
+            self.logger.info(f"Đã chia văn bản nhập thành {len(text_chunks)} phần")
+        
+        # Create full output path
+        output_file = os.path.join(output_dir, output_filename)
+        
+        # Disable the convert button
+        self.convert_btn.config(state="disabled")
+        
+        # Start conversion in background
+        if input_type == "file":
+            self.logger.info(f"Bắt đầu chuyển đổi tệp: {input_file}")
+        else:
+            self.logger.info(f"Bắt đầu chuyển đổi văn bản đã nhập ({len(''.join(text_chunks))} ký tự)")
+        
+        def convert():
+            try:
                 # Get conversion parameters
                 model_id = self.model_var.get()
                 stability = self.stability_var.get()

@@ -125,7 +125,7 @@ class TtsApplication:
         # Start validation in background
         threading.Thread(target=validate_key, daemon=True).start()
     
-    def _update_key_status(self, valid: bool, data: dict):
+    def _update_key_status(self, valid: bool, data: dict, total_credits: dict = None):
         """Update the UI with API key validation results"""
         if valid:
             # Extract credit information from various locations
@@ -148,6 +148,21 @@ class TtsApplication:
             
             # Format credits info cho logging và hiển thị
             credits_info = f"{character_remaining:,} / {character_limit:,}"
+            
+            # Add total credits info if available
+            if total_credits and total_credits.get("unique_keys", 0) > 0:
+                total_remaining = total_credits.get("total_remaining", 0)
+                unique_keys = total_credits.get("unique_keys", 0)
+                duplicates = total_credits.get("duplicates", 0)
+                
+                # Only show total if we have more than one unique key
+                if unique_keys > 1:
+                    total_info = f" (Tổng: {total_remaining:,} từ {unique_keys} khóa)"
+                    credits_info += total_info
+                    
+                    # Log if duplicates found
+                    if duplicates > 0:
+                        self.logger.info(f"Đã phát hiện {duplicates} khóa trùng lặp và đã loại bỏ khỏi tổng số")
             
             self.logger.success(f"API key hợp lệ. Credits còn lại: {credits_info}")
             self.status_label.config(text=f"API key hợp lệ. Credits: {credits_info}")
@@ -203,8 +218,11 @@ class TtsApplication:
             # Get user info in background
             valid, data = self.api_client.validate_api_key()
             
+            # Get total credits from all keys
+            total_credits = self.api_key_manager.get_total_credits(self.api_client)
+            
             # Update UI in main thread
-            self.root.after(0, lambda: self._update_key_status(valid, data))
+            self.root.after(0, lambda: self._update_key_status(valid, data, total_credits))
         
         # Start validation in background
         threading.Thread(target=get_credits, daemon=True).start() 

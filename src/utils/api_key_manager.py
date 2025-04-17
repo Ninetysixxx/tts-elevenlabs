@@ -9,7 +9,7 @@ Manages the secure storage and retrieval of API keys
 import os
 import json
 import base64
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -111,6 +111,83 @@ class ApiKeyManager:
     def get_key_names(self) -> List[str]:
         """Get the list of key names"""
         return list(self.keys.keys())
+    
+    def get_total_credits(self, api_client) -> Dict[str, Any]:
+        """
+        Get total credits from all API keys, without counting duplicates
+        
+        Returns a dictionary with:
+        - total_remaining: Total remaining credits across all unique API keys
+        - total_limit: Total credit limit across all unique API keys
+        - unique_keys: Number of unique API keys
+        - duplicates: Number of duplicate API keys
+        """
+        if not api_client:
+            return {
+                "total_remaining": 0,
+                "total_limit": 0,
+                "unique_keys": 0,
+                "duplicates": 0
+            }
+        
+        # Store unique API keys to avoid counting duplicates
+        unique_api_keys = set()
+        key_details = {}
+        duplicates = 0
+        
+        # Get all API keys
+        for key_name in self.keys:
+            api_key = self.get_key(key_name)
+            if api_key:
+                if api_key in unique_api_keys:
+                    duplicates += 1
+                    continue
+                
+                unique_api_keys.add(api_key)
+                
+                # Create a temporary client with this key
+                temp_client = api_client.__class__(api_key)
+                
+                # Get user info
+                info = temp_client.get_user_info()
+                
+                # Skip if error
+                if "error" in info:
+                    continue
+                
+                # Extract credit information from various possible locations
+                subscription = info.get("subscription", {})
+                
+                # Trường hợp ElevenLabs API trả về character_count là số đã dùng
+                character_limit = subscription.get("character_limit", 0)
+                character_used = subscription.get("character_count", 0)
+                
+                # Tính số credits còn lại (remaining)
+                character_remaining = character_limit - character_used
+                
+                # Nếu không tìm thấy trong subscription, thử trong dữ liệu chính
+                if character_limit == 0:
+                    character_limit = info.get("character_limit", 0)
+                    character_used = info.get("character_count", 0)
+                    character_remaining = character_limit - character_used
+                
+                # Store key details
+                key_details[key_name] = {
+                    "remaining": character_remaining,
+                    "limit": character_limit
+                }
+        
+        # Calculate totals
+        total_remaining = sum(key["remaining"] for key in key_details.values())
+        total_limit = sum(key["limit"] for key in key_details.values())
+        
+        return {
+            "total_remaining": total_remaining,
+            "total_limit": total_limit,
+            "unique_keys": len(unique_api_keys),
+            "duplicates": duplicates,
+            "key_details": key_details
+        }
     
     def save_keys(self) -> bool:
         """Save keys to file"""

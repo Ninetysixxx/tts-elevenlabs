@@ -7,5 +7,5 @@
   "similarity_boost": 0.5,
   "chunk_size": 5000,
   "language": "vi",
-  "theme": "default"
+  "theme": "light"
 }
