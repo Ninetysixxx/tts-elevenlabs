@@ -523,11 +523,11 @@ class ConversionTab:
             # Update total credits display
             if unique_keys > 0:
                 self.total_credits_label.config(
-                    text=f"Tổng credits khả dụng: {total_remaining:,} ({unique_keys} khóa duy nhất)"
+                    text=f"Tổng credits khả dụng: {total_remaining:,} ({unique_keys} khóa khả dụng)"
                 )
                 
                 # Log detailed information
-                self.logger.info(f"Tổng credits khả dụng: {total_remaining:,} từ {unique_keys} khóa API duy nhất")
+                self.logger.info(f"Tổng credits khả dụng: {total_remaining:,} từ {unique_keys} khóa API khả dụng")
                 if duplicates > 0:
                     self.logger.info(f"Đã phát hiện {duplicates} khóa trùng lặp và đã loại bỏ khỏi tổng số")
             else:
